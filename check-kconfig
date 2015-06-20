@@ -1,0 +1,158 @@
+#!/usr/bin/env perl
+# vim: set ts=2 sw=2 sts=0 et:
+
+use strict;
+use warnings;
+use feature qw(say);
+use Term::ANSIColor qw(:constants);
+
+die
+"Usage:
+   cat config | $0
+" if @ARGV > 0;
+
+$Term::ANSIColor::AUTORESET = 1;
+
+# notice:
+#   CONFIG_DEBUG_FS -> DEBUG_FS
+
+my %targets = (
+  'dev:scsi_smart' => {
+    config => {
+      CHR_DEV_SG => 'ym',
+    },
+  },
+  'app:iotop/dstat' => {
+    config => {
+      TASKSTATS => 'y',
+      TASK_IO_ACCOUNTING => 'y',
+    },
+  },
+  'app:systemtap' => {
+    config => {
+      RELAY => 'y',
+      DEBUG_FS => 'y',
+      DEBUG_INFO => 'y',
+      KPROBES => 'y',
+    },
+  },
+  'dev:nw_performance' => {
+    config => {
+      PCI_MSI => 'y',
+    },
+  },
+  'app:ktap' => {
+    version => '>3.1',
+    config => {
+      FTRACE => 'y',
+      CONTEXT_SWITCH_TRACER => 'y',
+      EVENT_TRACING => 'y',
+      FTRACE_SYSCALLS => 'y',
+    },
+  },
+  'aes_ni' => {
+     config => {
+       CRYPTO_AES_NI_INTEL => 'ym',
+     },
+  },
+  'docker:networking' => {
+    config => {
+      BRIDGE => 'ym',
+      NETFILTER_XT_MATCH_ADDRTYPE => 'ym',
+      NF_NAT => 'ym',
+      NF_NAT_IPV4 => 'ym',
+      NF_NAT_NEEDED => 'y',
+      IP_NF_NAT => 'ym',
+      BRIDGE_NETFILTER => 'ym',
+    },
+  },
+  'docker:filesystem' => {
+    config => {
+      AUFS_FS => 'ym',
+      OVERLAY_FS => 'ym',
+      BLK_DEV_DM => 'ym',
+      DM_THIN_PROVISIONING => 'ym',
+      EXT4_FS => 'ym',
+    },
+  },
+  'docker:namespace' => {
+    config => {
+      NAMESPACES => 'ym',
+      UTS_NS => 'ym',
+      IPC_NS => 'ym',
+      USER_NS => 'ym',
+      PID_NS => 'ym',
+      NET_NS => 'ym',
+    },
+  },
+  'docker:cgroups' => {
+    config => {
+      CGROUPS => 'y',
+    },
+  },
+  'docker:cgroups_controllers' => {
+    config => {
+      CGROUP_CPUACCT => 'ym',
+      BLK_CGROUP => 'ym',
+      MEMCG => 'ym',
+      MEMCG_SWAP => 'ym',
+# Control swap usage by setting swapaccount=1 as a kernel boot parameter.
+# or follow settings.
+      MEMCG_SWAP_ENABLED => 'y',
+    },
+  },
+  'cgroups:blkio-controller' => {
+    config => {
+      BLK_CGROUP => 'ym',
+      BLK_DEV_THROTTLING => 'ym',
+      CFQ_GROUP_IOSCHED => 'ym',
+    },
+  },
+  'etc' => {
+    config => {
+      IKCONFIG_PROC => 'y',
+    }
+  },
+);
+
+my %config = ();
+my $kernel_version;
+
+while (<STDIN>) {
+  chomp;
+  next unless $_;
+  if (m!^# Linux/[^ ]+ ([0-9.]+)-?[^ ]* Kernel Configuration!) {
+    $kernel_version = $1;
+  }
+  next if /^#/;
+  if (m/^([^=]+)=(.+)$/) {
+    $config{$1} = $2;
+  }
+}
+
+say "Kernel Version: $kernel_version";
+foreach my $t (keys %targets) {
+  say $t;
+  for my $c (keys %{$targets{$t}{'config'}}) {
+    my $config_name = "";
+    if ($c =~ m/^CONFIG_/) {
+      $config_name = $c;
+    } else {
+      $config_name = "CONFIG_" . $c;
+    }
+
+    if (! defined($config{$config_name})) {
+       say RED "  NG: $config_name not set";
+    } elsif (index($targets{$t}{'config'}{$c},$config{$config_name}) != -1) {
+       if ($config{$config_name} eq 'y') {
+         say GREEN "  OK: $config_name is builtin.";
+       } elsif ($config{$config_name} eq 'm') {
+         say GREEN "  OK: $config_name is module.";
+       } else {
+         say GREEN "  ON: $config_name is $config{$config_name}.";
+       }
+    } else {
+       say RED "  NG?: $config_name is unknown settings. => [$config{$config_name}]";
+    }
+  }
+}
